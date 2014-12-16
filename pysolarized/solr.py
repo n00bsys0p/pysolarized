@@ -37,10 +37,9 @@ class SolrException(BaseException):
 class Solr(object):
     def __init__(self, endpoints, default_endpoint=None, http_cache=True):
         if not endpoints:
-            logger.warning(
-                "Faulty Solr configuration, SOLR will not be available!"
-            )
-            return
+            msg = "Faulty Solr configuration, SOLR will not be available!"
+            logger.warning(msg)
+            raise SolrException(msg)
 
         self.endpoints = None
         self.default_endpoint = None
@@ -308,8 +307,9 @@ class Solr(object):
         assert "responseHeader" in results
         # Check for response status
         if not results.get("responseHeader").get("status") == 0:
-            logger.error("Server error while retrieving results: %s", results)
-            return None
+            msg = "Server error while retrieving results: {0}".format(results)
+            logger.error(msg)
+            raise SolrException(msg)
 
         assert "response" in results
 
