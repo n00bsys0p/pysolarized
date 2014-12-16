@@ -10,7 +10,7 @@ try:
 except ImportError:
     import urlparse
 
-SOLR_ADD_BATCH = 200 # Number of documents to send in batch when adding
+SOLR_ADD_BATCH = 200  # Number of documents to send in batch when adding
 logger = logging.getLogger("pysolarized")
 
 
@@ -37,7 +37,9 @@ class SolrException(BaseException):
 class Solr(object):
     def __init__(self, endpoints, default_endpoint=None, http_cache=True):
         if not endpoints:
-            logger.warning("Faulty Solr configuration, SOLR will not be available!")
+            logger.warning(
+                "Faulty Solr configuration, SOLR will not be available!"
+            )
             return
 
         self.endpoints = None
@@ -74,11 +76,17 @@ class Solr(object):
         # Check document language and dispatch to correct core
         url = _get_url(core_url, "update")
         try:
-            response = self.req_session.post(url, data=json_command, headers={'Content-Type': 'application/json'})
+            response = self.req_session.post(
+                url, data=json_command,
+                headers={'Content-Type': 'application/json'}
+            )
             response.raise_for_status()
         except requests.RequestException as e:
-            logger.error("Failed to send update to Solr endpoint [%s]: %s", core_url, e, exc_info=True)
-            raise SolrException("Failed to send command to Solr [%s]: %s" % (core_url, e,))
+            msg = "Failed to send update to Solr endpoint [{0}]: {1}".format(
+                core_url, e
+            )
+            logger.error(msg, exc_info=True)
+            raise SolrException(msg)
         return True
 
     def _send_solr_query(self, request_url, query):
@@ -87,8 +95,9 @@ class Solr(object):
             response.raise_for_status()
             results = response.json()
         except requests.RequestException as e:
-            logger.error("Failed to connect to Solr server: %s!", e, exc_info=True)
-            return None
+            msg = "Failed to connect to Solr server: {0}!".format(e)
+            logger.error(msg, exc_info=True)
+            raise SolrException(msg)
         return results
 
     def add(self, documents, boost=None):
@@ -118,15 +127,25 @@ class Solr(object):
             language_batches = {}
             # Create command JSONs for each of language endpoints
             for lang in self.endpoints:
-                # Append documents with languages without endpoint to default endpoint
-                document_jsons = ["\"add\":" + json.dumps(data) for data in self._add_batch
-                                  if data['doc'].get("language", self.default_endpoint) == lang or (lang == self.default_endpoint and not self.endpoints.has_key(data['doc'].get("language", None)))]
+                # Append documents with languages without endpoint
+                # to the default endpoint
+                document_jsons = [
+                    "\"add\":" + json.dumps(data) for data in self._add_batch
+                        if data['doc'].get("language", self.default_endpoint) == lang
+                    or (lang == self.default_endpoint
+                        and not data['doc'].get("language", None)
+                        in self.endpoints.keys())
+                ]
+
                 command_json = "{" + ",".join(document_jsons) + "}"
                 language_batches[lang] = command_json
-            # Solr requires for documents to be sent in { "add" : { "doc" : {...} }, "add": { "doc" : { ... }, ... }
+            # Solr requires for documents to be sent in
+            # { "add" : { "doc" : {...} }, "add": { "doc" : { ... }, ... }
             # format which isn't possible with python dictionaries
             for lang in language_batches:
-                self._send_solr_command(self.endpoints[lang], language_batches[lang])
+                self._send_solr_command(
+                    self.endpoints[lang], language_batches[lang]
+                )
                 self._add_batch = []
 
     def deleteAll(self):
@@ -134,14 +153,18 @@ class Solr(object):
         Deletes whole Solr index. Use with care.
         """
         for core in self.endpoints:
-            self._send_solr_command(self.endpoints[core], "{\"delete\": { \"query\" : \"*:*\"}}")
+            self._send_solr_command(
+                self.endpoints[core], "{\"delete\": { \"query\" : \"*:*\"}}"
+            )
 
     def delete(self, id):
         """
         Deletes document with ID on all Solr cores
         """
         for core in self.endpoints:
-            self._send_solr_command(self.endpoints[core], "{\"delete\" : { \"id\" : \"%s\"}}" % (id,))
+            self._send_solr_command(
+                self.endpoints[core], '{"delete" : { "id" : "%s"}}' % (id)
+            )
 
     def commit(self):
         """
@@ -153,7 +176,9 @@ class Solr(object):
 
     def optimize(self):
         for core in self.endpoints:
-            self._send_solr_command(self.endpoints[core], "{ \"optimize\": {} }")
+            self._send_solr_command(
+                self.endpoints[core], "{ \"optimize\": {} }"
+            )
 
     def _get_shards(self):
         """
@@ -184,14 +209,17 @@ class Solr(object):
 
         # Process facets
         if "facet_counts" in results:
-            facet_types = ["facet_fields", "facet_dates", "facet_ranges", "facet_queries"]
+            facet_types = [
+                "facet_fields", "facet_dates", "facet_ranges", "facet_queries"
+            ]
             for type in facet_types:
                 assert type in results.get("facet_counts")
                 items = results.get("facet_counts").get(type)
                 for field, values in items.items():
                     result_obj.facets[field] = []
 
-                    # Range facets have results in "counts" subkey and "between/after" on top level. Flatten this.
+                    # Range facets have results in "counts" subkey and
+                    # "between/after" on top level. Flatten this.
                     if type == "facet_ranges":
                         if not "counts" in values:
                             continue
@@ -200,15 +228,24 @@ class Solr(object):
                             result_obj.facets[field].append((facet, value))
 
                         if "before" in values:
-                            result_obj.facets[field].append(("before", values["before"]))
+                            result_obj.facets[field].append(
+                                ("before", values["before"])
+                            )
 
                         if "after" in values:
-                            result_obj.facets[field].append(("after", values["after"]))
+                            result_obj.facets[field].append(
+                                ("after", values["after"])
+                            )
                     else:
                         for facet, value in values.items():
-                            # Date facets have metadata fields between the results, skip the params, keep "before" and "after" fields for other
-                            if type == "facet_dates" and \
-                            (facet == "gap" or facet == "between" or facet == "start" or facet == "end"):
+                            # Date facets have metadata fields between the
+                            # results, skip the params, keep "before" and
+                            # "after" fields for other
+                            if type == "facet_dates" and (
+                                facet == "gap"
+                                    or facet == "between"
+                                    or facet == "start"
+                                    or facet == "end"):
                                 continue
                             result_obj.facets[field].append((facet, value))
 
@@ -224,9 +261,11 @@ class Solr(object):
         Queries Solr and returns results
 
         query - Text query to search for
-        filters - dictionary of filters to apply when searching in form of { "field":"filter_value" }
+        filters - dictionary of filters to apply when searching in the form
+                  { "field":"filter_value" }
         columns - columns to return, list of strings
-        sort - list of fields to sort on in format of ["field asc", "field desc", ... ]
+        sort - list of fields to sort on in format of
+               ["field asc", "field desc", ... ]
         start - start number of first result (used in pagination)
         rows - number of rows to return (used for pagination, defaults to 30)
         """
@@ -234,12 +273,14 @@ class Solr(object):
         if not columns:
             columns = ["*", "score"]
 
-        fields = {"q": query,
-                 "json.nl" :"map",           # Return facets as JSON objects
-                 "fl": ",".join(columns),    # Return score along with results
-                 "start": str(start),
-                 "rows": str(rows),
-                 "wt": "json"}
+        fields = {
+            "q": query,
+            "json.nl": "map",           # Return facets as JSON objects
+            "fl": ",".join(columns),    # Return score along with results
+            "start": str(start),
+            "rows": str(rows),
+            "wt": "json"
+        }
 
         # Use shards parameter only if there are several cores active
         if len(self.endpoints) > 1:
@@ -256,7 +297,8 @@ class Solr(object):
         if not sort is None:
             fields["sort"] = ",".join(sort)
 
-        # Do request to Solr server to default endpoint (other cores will be queried with shard functionality)
+        # Do request to Solr server to default endpoint (other cores will be
+        # queried with shard functionality)
         assert self.default_endpoint in self.endpoints
         request_url = _get_url(self.endpoints[self.default_endpoint], "select")
         results = self._send_solr_query(request_url, fields)
@@ -279,7 +321,8 @@ class Solr(object):
         Retrieves "more like this" results for a passed query document
 
         query - query for a document on which to base similar documents
-        fields - fields on which to base similarity estimation (either comma delimited string or a list)
+        fields - fields on which to base similarity estimation (either comma
+                 delimited string or a list)
         columns - columns to return (list of strings)
         start - start number for first result (used in pagination)
         rows - number of rows to return (used for pagination, defaults to 30)
@@ -292,13 +335,15 @@ class Solr(object):
         if columns is None:
             columns = ["*", "score"]
 
-        fields = {'q' : query,
-                  'json.nl': 'map',
-                  'mlt.fl': mlt_fields,
-                  'fl': ",".join(columns),
-                  'start': str(start),
-                  'rows': str(rows),
-                  'wt': "json"}
+        fields = {
+            'q': query,
+            'json.nl': 'map',
+            'mlt.fl': mlt_fields,
+            'fl': ",".join(columns),
+            'start': str(start),
+            'rows': str(rows),
+            'wt': "json"
+        }
 
         if len(self.endpoints) > 1:
             fields["shards"] = self._get_shards()
@@ -312,8 +357,9 @@ class Solr(object):
         assert "responseHeader" in results
         # Check for response status
         if not results.get("responseHeader").get("status") == 0:
-            logger.error("Server error while retrieving results: %s", results)
-            return None
+            msg = "Server error while retrieving results: %s", results
+            logger.error(msg)
+            raise SolrException(msg)
 
         assert "response" in results
 
