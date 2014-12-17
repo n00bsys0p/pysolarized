@@ -30,7 +30,7 @@ class SolrResults:
         self.highlights = {}        # Highligts for found documents
 
 
-class SolrException(BaseException):
+class SolrException(Exception):
     pass
 
 
